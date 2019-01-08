@@ -1,0 +1,30 @@
+<?xml version="1.0"?>
+<!--　How to import mesh: http://gazebosim.org/tutorials?tut=import_mesh&cat=build_robot -->
+
+<sdf version="1.6">
+  <world name="default">
+    <include>
+      <uri>model://ground_plane</uri>
+    </include>
+    <include>
+      <uri>model://sun</uri>
+    </include>
+    <model name="cylinder">
+      <pose>0 0 0  1.5708 0 0</pose> -- 1.5708[rad] = 90[deg]
+      <static>true</static>
+      <link name="body">
+	      <!-- add <collision> in the sample code for collision judgment or laser scan -->
+        <collision name="collision">
+          <geometry>
+            <mesh><uri>file://cylinder-mesh.dae</uri></mesh>
+          </geometry>
+        </collision>
+        <visual name="visual">
+          <geometry>
+            <mesh><uri>file://cylinder-mesh.dae</uri></mesh>
+          </geometry>
+        </visual>
+      </link>
+    </model>
+  </world>
+</sdf>
