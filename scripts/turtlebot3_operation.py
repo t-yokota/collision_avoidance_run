@@ -104,7 +104,7 @@ class robotOperation:
         rospy.init_node('turtlebot3_operation')
         rospy.Subscriber('/vel/lin', Float32, self.opLinCallback)
         rospy.Subscriber('/vel/ang', Float32, self.opAngCallback)
-        rospy.Timer(rospy.Duration(0.5), self.timerCallback)
+        rospy.Timer(rospy.Duration(0.1), self.smoothCallback)
         self.pub = rospy.Publisher('cmd_vel', Twist, queue_size=10)
         
         self.target_linear_vel  = 0.0
@@ -114,27 +114,34 @@ class robotOperation:
         self.control_angular_vel = 0.0
 
     def opLinCallback(self, linVel):
-        # self.target_linear_vel = LIN_VEL_STEP_SIZE * linVel.data
-        self.target_linear_vel = MAX_LIN_VEL * linVel.data
-        print vels(self.target_linear_vel,self.target_angular_vel)
+        self.target_linear_vel  = MAX_LIN_VEL * linVel.data
+        self.target_linear_vel = checkLinearLimitVelocity(self.target_linear_vel)
+        # print vels(self.target_linear_vel, self.target_angular_vel)
 
     def opAngCallback(self, angVel):
-        # self.target_angular_vel = ANG_VEL_STEP_SIZE * angVel.data
         self.target_angular_vel = MAX_ANG_VEL * angVel.data
-        print vels(self.target_linear_vel,self.target_angular_vel)
+        self.target_angular_vel = checkAngularLimitVelocity(self.target_angular_vel)
+        # print vels(self.target_linear_vel, self.target_angular_vel)
 
-    def timerCallback(self, event):
+    def smoothCallback(self, event):
         twist = Twist()
-        self.control_linear_vel = makeSimpleProfile(self.control_linear_vel, self.target_linear_vel, (LIN_VEL_STEP_SIZE/2.0))
+        self.control_linear_vel  = makeSimpleProfile(self.control_linear_vel,  self.target_linear_vel,  (LIN_VEL_STEP_SIZE/2.0))
         self.control_angular_vel = makeSimpleProfile(self.control_angular_vel, self.target_angular_vel, (ANG_VEL_STEP_SIZE/2.0))
-        twist.linear.x = self.control_linear_vel; twist.linear.y = 0.0; twist.linear.z = 0.0
-        twist.angular.x = 0.0; twist.angular.y = 0.0; twist.angular.z = self.control_angular_vel
+
+        twist.linear.x = self.control_linear_vel
+        twist.linear.y = 0.0
+        twist.linear.z = 0.0
+
+        twist.angular.x = 0.0
+        twist.angular.y = 0.0 
+        twist.angular.z = self.control_angular_vel
+        
         self.pub.publish(twist)
         print vels(self.control_linear_vel,self.control_angular_vel)
 
     def closeCallback(self):
         twist = Twist()
-        twist.linear.x = 0.0; twist.linear.y = 0.0; twist.linear.z = 0.0
+        twist.linear.x  = 0.0; twist.linear.y  = 0.0; twist.linear.z  = 0.0
         twist.angular.x = 0.0; twist.angular.y = 0.0; twist.angular.z = 0.0
         self.pub.publish(twist)
 
@@ -142,11 +149,9 @@ if __name__=="__main__":
     print msg
     turtlebot3_model = rospy.get_param("model", "burger")
     try:
-		ro = robotOperation()
-		rospy.spin()
+        ro = robotOperation()
+        rospy.spin()
     except rospy.ROSInterruptException: 
         pass
     finally:
         pass
-
-    

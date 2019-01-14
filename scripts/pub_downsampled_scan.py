@@ -1,12 +1,19 @@
 #! /usr/bin/env python
 # -*- coding: utf-8 -*-
 
-# Copyright (c) 2019, Tomohiro Yokota.
-# 
+# Copyright (c) 2019, Tomohiro Yokota. 
 
 import rospy
 from sensor_msgs.msg import LaserScan
 from std_msgs.msg import Float32MultiArray
+
+msg = """
+Publishing down-sampled scan values.
+----------
+> range: front half of the LIDAR
+> step : get scan value per 1 digree
+
+"""
 
 class defSamplingDegree:
 	min = 0
@@ -23,13 +30,13 @@ class pubDownSampledScan:
 		self.pub_ranges_downsampled_forward = rospy.Publisher('/scan/downsampled/forward/ranges', Float32MultiArray, queue_size=10)
 
 	def scanCallback(self, scan):
-		# define the sampling range of degree
+		# define degree of the sampling range
 		deg1.min = 0
 		deg1.max = 90
 		deg2.min = 270
 		deg2.max = 360
 		# get data per (step) degree 
-		step = 10
+		step = 1
 
 		# instance for RViz
 		downsampled_scan   = LaserScan()
@@ -76,12 +83,17 @@ class pubDownSampledScan:
 		# By using two lists, get a list in which data is stored in the order of 0 to 360 degrees
 		a.extend(b)
 		downsampled_scan.ranges = a
+
+		# log on terminal
+		for i in range(len(downsampled_ranges.data)):
+			rospy.loginfo("val[%d]:%f", i, downsampled_ranges.data[i])
 			
 		# publish
  		self.pub_scan_downsampled_forward.publish(downsampled_scan)
 		self.pub_ranges_downsampled_forward.publish(downsampled_ranges)
 		
 if __name__ ==  '__main__':
+	print msg
 	try:
 		pdss = pubDownSampledScan()
 		rospy.spin()
