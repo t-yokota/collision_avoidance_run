@@ -114,7 +114,7 @@ class robotOperation:
         self.control_angular_vel = 0.0
 
     def opLinCallback(self, linVel):
-        self.target_linear_vel  = MAX_LIN_VEL * linVel.data
+        self.target_linear_vel = MAX_LIN_VEL * linVel.data
         self.target_linear_vel = checkLinearLimitVelocity(self.target_linear_vel)
         # print vels(self.target_linear_vel, self.target_angular_vel)
 
@@ -125,8 +125,10 @@ class robotOperation:
 
     def smoothCallback(self, event):
         twist = Twist()
-        self.control_linear_vel  = makeSimpleProfile(self.control_linear_vel,  self.target_linear_vel,  (LIN_VEL_STEP_SIZE/2.0))
-        self.control_angular_vel = makeSimpleProfile(self.control_angular_vel, self.target_angular_vel, (ANG_VEL_STEP_SIZE/2.0))
+        # self.control_linear_vel  = makeSimpleProfile(self.control_linear_vel,  self.target_linear_vel,  (LIN_VEL_STEP_SIZE/2.0))
+        # self.control_angular_vel = makeSimpleProfile(self.control_angular_vel, self.target_angular_vel, (ANG_VEL_STEP_SIZE/2.0))
+        self.control_linear_vel  = makeSimpleProfile(self.control_linear_vel,  self.target_linear_vel,  LIN_VEL_STEP_SIZE)
+        self.control_angular_vel = makeSimpleProfile(self.control_angular_vel, self.target_angular_vel, ANG_VEL_STEP_SIZE)
 
         twist.linear.x = self.control_linear_vel
         twist.linear.y = 0.0
