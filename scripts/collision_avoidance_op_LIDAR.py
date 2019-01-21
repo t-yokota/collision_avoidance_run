@@ -7,6 +7,7 @@ from std_msgs.msg import Float32
 
 import math
 from operator import mul
+from scipy import optimize as opt
 
 class pubRobotControlParam_LIDAR:
 	# 初期化関数
@@ -18,11 +19,16 @@ class pubRobotControlParam_LIDAR:
 	
 	# cutoff functioin
 	# > 設定範囲内にセンサ値を丸める
-	def cut(self, x, f):
-		return f if float(f) < x or x == float('inf') else x
+	def cut(self, x, f_min, f_max):
+		if   float(f_min) > x:
+			return f_min
+		elif float(f_max) < x or x == float('inf'):
+			return f_max
+		else:
+			return x
 
 	# nomalize function
-	# > 最大１，最小０で正規化
+	# > 最大1，最小0で正規化
 	def normalize(self, x, range_min, range_max):
 		return (x - float(range_min))/(float(range_max) - float(range_min))
 
@@ -44,47 +50,103 @@ class pubRobotControlParam_LIDAR:
 		# センサ値の番号を定義域内にマッピング
 		x_map = self.map(x, 0.0, len_scan, x_min, x_max)
 
-		return math.exp(-1 * (x_map - u)**2 / (2 * s))/math.sqrt(2 * math.pi * s)
+		return math.exp(-1 * (x_map - u)**2 / (2 * s))
+
+	# quadratic function for weighting
+	# > (len_scan)個のLIDAR値の重み付けに用いる2次関数
+	def quad_func(self, x, a, b, c):
+			return a*x**2 + b*x + c
+	def quadratic_weight(self, index, len_scan):
+		w_left  = 0.3
+		w_front = 1.0
+		w_right = 0.3
+
+		x = [0.0, 0.5, 1.0]
+		y = [w_left, w_front, w_right]
+
+		res = opt.curve_fit(self.quad_func, x, y)
+		a = res[0][0]
+		b = res[0][1]
+		c = res[0][2]
+
+		# センサ値の番号を定義域内にマッピング
+		index_map = self.map(index, 0.0, len_scan, 0.0, 1.0)
+		
+		w = self.quad_func(index_map, a, b, c)
+		return w
+
+	# quartic function for weighting
+	# > (len_scan)個のLIDAR値の重み付けに用いる4次関数
+	def quart_func(self, x, a, b, c, d, e):
+			return a*x**4 + b*x**3 + c*x**2 + d*x + e
+	def quartic_weight(self, index, len_scan):
+		w_left  = 0.3
+		w_front = 1.0
+		w_right = 0.3
+
+		x = [0.0, 0.4, 0.5, 0.6, 1.0]
+		y = [w_left, w_front, w_front, w_front, w_right]
+
+		res = opt.curve_fit(self.quart_func, x, y)
+		a = res[0][0]
+		b = res[0][1]
+		c = res[0][2]
+		d = res[0][3]
+		e = res[0][4]
+
+		# センサ値の番号を定義域内にマッピング
+		index_map = self.map(index, 0.0, len_scan, 0.0, 1.0)
+		
+		w = self.quart_func(index_map, a, b, c, d, e)
+		return w
 
 	# callback function
 	# > 
 	def subLidarScanCallback(self, scan):
 		# LIDAR's spec
-		range_min = 0.1
-		range_max = 3.5
+		# range_min = 0.1
+		# range_max = 3.5
 
 		# nomalize scan value
-		range_cutoff = 0.7
+		range_cutoff_max = 1.0
+		range_cutoff_min = 0.5
+
 		scan_norm = []
 		for i in range(len(scan.data)):
-			scan_norm.append(1 - self.normalize( self.cut(scan.data[i], range_cutoff), range_min, range_cutoff ))
+			scan_norm.append(self.normalize( self.cut(scan.data[i], range_cutoff_min, range_cutoff_max), range_cutoff_min, range_cutoff_max))
 			# rospy.loginfo("val[%d]:%f", i, scan_norm[i])
 
 		# get weight function
-		x = [i for i in range(len(scan_norm))]
+		index = [i for i in range(len(scan_norm))]
 		w = []
-		for i in range(len(x)):
-			w.append(self.gaussian_weight(x[i], len(x)))
+		for i in range(len(index)):
+			w.append(self.quadratic_weight(index[i], len(index)))
+			# w.append(self.quartic_weight(index[i], len(index)))
+			# w.append(self.gaussian_weight(index[i], len(index)))
 			# rospy.loginfo("val[%d]:%f", i, w[i])
 		
 		# difine controll value
-		angVel = 4 * sum(map(mul, scan_norm, w))/len(scan_norm)
-		linVel = 0.8 - 2 * angVel
+		linVel = sum(map(mul, scan_norm, w))/len(scan_norm)
+		angVel = 0.7 - linVel
+
+		if min(scan_norm[60:120]) == 0:
+			linVel = 0.0
+			angVel = 2.0
+
 		rospy.loginfo("linVel:%f angVel:%f", linVel, angVel)
 
 		# define direction of angular movement
-		leftVal  = 0
-		rightVal = 0
+		l = 0
+		r = 0
 		for i in range(len(scan_norm)):
 			if i < len(scan_norm)/2:
-				leftVal  = leftVal  + scan_norm[i] * w[i]
+				l = l + (1-scan_norm[i])**10
 			else:
-				rightVal = rightVal + scan_norm[i] * w[i]
+				r = r + (1-scan_norm[i])**10
+		ang_dir = 1 if l < r else -1
 		
-		ang_dir = 1 if leftVal < rightVal else -1
-
-		self.pub_lin_vel.publish(linVel)
-		self.pub_ang_vel.publish(angVel*ang_dir)
+		self.pub_lin_vel.publish(linVel * 0.7)
+		self.pub_ang_vel.publish(angVel*ang_dir * 0.5)
 
 if __name__ ==  '__main__':
 	try:
