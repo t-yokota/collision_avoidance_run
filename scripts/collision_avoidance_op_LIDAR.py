@@ -37,116 +37,37 @@ class pubRobotControlParam_LIDAR:
 	def map(self, x, in_min, in_max, out_min, out_max):
 		return (x - float(in_min)) * (float(out_max) - float(out_min))/(float(in_max) - float(in_min)) + float(out_min)
 
-	# gaussian function for weighting
-	# > (len_scan)個のLIDAR値の重み付けに用いるガウス関数
-	def gaussian_weight(self, x, len_scan):
-		# 分散：分布の形（sが大きいほど扁平）
-		s = 0.1
-		# 平均：uを与えるとx方向に移動→関数を第１象限に収めておく
-		u = 3.0 * math.sqrt(s)
-		# 定義域
-		x_min = 0.0
-		x_max = 2 * u
-		# センサ値の番号を定義域内にマッピング
-		x_map = self.map(x, 0.0, len_scan, x_min, x_max)
-
-		return math.exp(-1 * (x_map - u)**2 / (2 * s))
-
-	# quadratic function for weighting
-	# > (len_scan)個のLIDAR値の重み付けに用いる2次関数
-	def quad_func(self, x, a, b, c):
-			return a*x**2 + b*x + c
-	def quadratic_weight(self, index, len_scan):
-		w_left  = 0.3
-		w_front = 1.0
-		w_right = 0.3
-
-		x = [0.0, 0.5, 1.0]
-		y = [w_left, w_front, w_right]
-
-		res = opt.curve_fit(self.quad_func, x, y)
-		a = res[0][0]
-		b = res[0][1]
-		c = res[0][2]
-
-		# センサ値の番号を定義域内にマッピング
-		index_map = self.map(index, 0.0, len_scan, 0.0, 1.0)
-		
-		w = self.quad_func(index_map, a, b, c)
-		return w
-
-	# quartic function for weighting
-	# > (len_scan)個のLIDAR値の重み付けに用いる4次関数
-	def quart_func(self, x, a, b, c, d, e):
-			return a*x**4 + b*x**3 + c*x**2 + d*x + e
-	def quartic_weight(self, index, len_scan):
-		w_left  = 0.3
-		w_front = 1.0
-		w_right = 0.3
-
-		x = [0.0, 0.4, 0.5, 0.6, 1.0]
-		y = [w_left, w_front, w_front, w_front, w_right]
-
-		res = opt.curve_fit(self.quart_func, x, y)
-		a = res[0][0]
-		b = res[0][1]
-		c = res[0][2]
-		d = res[0][3]
-		e = res[0][4]
-
-		# センサ値の番号を定義域内にマッピング
-		index_map = self.map(index, 0.0, len_scan, 0.0, 1.0)
-		
-		w = self.quart_func(index_map, a, b, c, d, e)
-		return w
-
 	# callback function
-	# > 
+	# > LIDARの値を用いた障害物回避走行
 	def subLidarScanCallback(self, scan):
-		# LIDAR's spec
-		# range_min = 0.1
-		# range_max = 3.5
-
-		# nomalize scan value
+		# define the using range of lidar value (0.5~1.0m)
 		range_cutoff_max = 1.0
 		range_cutoff_min = 0.5
 
+		# nomalize scan value
 		scan_norm = []
 		for i in range(len(scan.data)):
-			scan_norm.append(self.normalize( self.cut(scan.data[i], range_cutoff_min, range_cutoff_max), range_cutoff_min, range_cutoff_max))
+			scan_norm.append(self.normalize(self.cut(scan.data[i], range_cutoff_min, range_cutoff_max), range_cutoff_min, range_cutoff_max))
 			# rospy.loginfo("val[%d]:%f", i, scan_norm[i])
-
-		# get weight function
-		index = [i for i in range(len(scan_norm))]
-		w = []
-		for i in range(len(index)):
-			w.append(self.quadratic_weight(index[i], len(index)))
-			# w.append(self.quartic_weight(index[i], len(index)))
-			# w.append(self.gaussian_weight(index[i], len(index)))
-			# rospy.loginfo("val[%d]:%f", i, w[i])
 		
 		# difine controll value
-		linVel = sum(map(mul, scan_norm, w))/len(scan_norm)
-		angVel = 0.7 - linVel
-
-		if min(scan_norm[60:120]) == 0:
-			linVel = 0.0
-			angVel = 2.0
-
-		rospy.loginfo("linVel:%f angVel:%f", linVel, angVel)
+		linVel = sum(scan_norm)/len(scan_norm)
+		angVel = 1.0 - linVel
 
 		# define direction of angular movement
 		l = 0
 		r = 0
 		for i in range(len(scan_norm)):
 			if i < len(scan_norm)/2:
-				l = l + (1-scan_norm[i])**10
+				l = l + (1-scan_norm[i])**2
 			else:
-				r = r + (1-scan_norm[i])**10
-		ang_dir = 1 if l < r else -1
+				r = r + (1-scan_norm[i])**2
+		angDir = 1 if l < r else -1
 		
-		self.pub_lin_vel.publish(linVel * 0.7)
-		self.pub_ang_vel.publish(angVel*ang_dir * 0.5)
+		rospy.loginfo("linVel:%f angVel:%f, angDir:%f", linVel, angVel, angDir)
+
+		self.pub_lin_vel.publish(linVel*0.7)
+		self.pub_ang_vel.publish(angVel*angDir*0.9)
 
 if __name__ ==  '__main__':
 	try:
